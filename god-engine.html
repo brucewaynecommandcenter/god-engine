@@ -387,12 +387,31 @@ function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 async function getCandles(sym,tf){
   const k=tf+'|'+sym;
   if(S.cache[k])return S.cache[k];
-  const urls=[
+  const direct=[
     `https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=210`,
     `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=210`,
   ];
-  for(const url of urls){
-    try{const r=await fetch(url);if(!r.ok)continue;const d=await r.json();if(Array.isArray(d)&&d.length>10){S.cache[k]=d;return d;}}catch(e){continue;}
+  // Try direct first
+  for(const url of direct){
+    try{
+      const r=await fetch(url,{mode:'cors'});
+      if(!r.ok)continue;
+      const d=await r.json();
+      if(Array.isArray(d)&&d.length>10){S.cache[k]=d;return d;}
+    }catch(e){continue;}
+  }
+  // CORS proxy fallback
+  const proxyUrls=[
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=210`)}`,
+    `https://corsproxy.io/?${encodeURIComponent(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=210`)}`,
+  ];
+  for(const url of proxyUrls){
+    try{
+      const r=await fetch(url);
+      if(!r.ok)continue;
+      const d=await r.json();
+      if(Array.isArray(d)&&d.length>10){S.cache[k]=d;return d;}
+    }catch(e){continue;}
   }
   return null;
 }
@@ -448,10 +467,9 @@ function connectWS(){
       setInterval(updTicker,15000);
       loadSentiment();loadNews();
       setInterval(loadNews,300000);
-      // Pre-load 4h and 1d in background after 2 mins
       setTimeout(()=>analyzeAll('4h'),120000);
       setTimeout(()=>analyzeAll('1d'),240000);
-    }else if(S.ready){updTopbar();}
+    }else if(S.ready){updTopbar();renderPage();}
   };
   ws.onerror=()=>setWS('err');
   ws.onclose=()=>{setWS('disc');S.wst=setTimeout(connectWS,3000);};
@@ -697,8 +715,37 @@ function setTF(el){
 }
 function forceRe(){S.analyzing=false;analyzeAll(S.tf,true);}
 
+// ── REST BOOTSTRAP (fallback if WS slow) ─────────────────────────────────────
+async function restBootstrap(){
+  if(S.ready)return;
+  try{
+    const r=await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr');
+    if(!r.ok)throw new Error();
+    const data=await r.json();
+    if(!Array.isArray(data))throw new Error();
+    data.filter(t=>t.symbol.endsWith('USDT')).forEach(t=>{
+      if(!S.pairs[t.symbol])S.pairs[t.symbol]={sym:t.symbol,sig:{}};
+      S.pairs[t.symbol].price=t.lastPrice;
+      S.pairs[t.symbol].chg=t.priceChangePercent;
+      S.pairs[t.symbol].vol=t.quoteVolume;
+    });
+    if(!S.ready&&Object.keys(S.pairs).length>10){
+      S.ready=true;renderPage();updTicker();updTopbar();
+      analyzeAll(S.tf);
+      setInterval(()=>{analyzeAll(S.tf);updTicker();updTopbar();},60000);
+      setInterval(updTicker,15000);
+      loadSentiment();loadNews();
+      setInterval(loadNews,300000);
+      setTimeout(()=>analyzeAll('4h'),120000);
+      setTimeout(()=>analyzeAll('1d'),240000);
+    }
+  }catch(e){}
+}
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 connectWS();
+// Bootstrap via REST after 4 seconds if WS hasn't connected yet
+setTimeout(restBootstrap, 4000);
 </script>
 </body>
 </html>
