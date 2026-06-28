@@ -677,6 +677,14 @@ function nav(el){
   const p=el.dataset.page;S.page=p;
   document.querySelectorAll('.pg').forEach(x=>x.classList.remove('active'));document.getElementById('pg-'+p).classList.add('active');
   const t=PT[p]||['God Engine',''];document.getElementById('pt').textContent=t[0];document.getElementById('ps').textContent=t[1];
+  // Auto-trigger analysis for trade idea pages
+  if(p==='swing'&&!Object.values(S.pairs).some(r=>r.sig&&r.sig['4h'])){
+    analyzeAll('4h');
+  } else if(p==='longterm'&&!Object.values(S.pairs).some(r=>r.sig&&r.sig['1d'])){
+    analyzeAll('1d');
+  } else if(p==='mtf'){
+    ['15m','1h','4h'].forEach(tf=>{if(!Object.values(S.pairs).some(r=>r.sig&&r.sig[tf]))analyzeAll(tf);});
+  }
   renderPage();
 }
 
@@ -793,8 +801,39 @@ function setupCard(r,a,typeLabel,typeClass){
 }
 
 function renderScalp(){const all=Object.values(S.pairs).filter(r=>r.sig&&r.sig['1m']&&r.sig['1m'].sig!=='NEUTRAL'&&r.sig['1m'].str>=4).sort((a,b)=>(b.sig['1m'].str||0)-(a.sig['1m'].str||0));const el=document.getElementById('scalpEl');if(!all.length){el.innerHTML='<div class="empty"><div class="empty-icon">⚡</div><div>No strength 4–5 scalp setups right now.<br><span class="mu">Analysis running on 1m data…</span></div></div>';return;}el.innerHTML='<div class="g2">'+all.slice(0,12).map(r=>setupCard(r,r.sig['1m'],'SCALP','sc3')).join('')+'</div>';}
-function renderSwing(){const all=Object.values(S.pairs).filter(r=>r.sig&&r.sig['4h']&&r.sig['4h'].sig!=='NEUTRAL'&&r.sig['4h'].str>=3).sort((a,b)=>(b.sig['4h'].str||0)-(a.sig['4h'].str||0));const el=document.getElementById('swingEl');if(!all.length){el.innerHTML='<div class="empty"><div class="empty-icon">🌊</div><div>4h analysis loads 2min after startup.<br><span class="mu">Or go to Signals → switch to 4h → Refresh</span></div></div>';return;}el.innerHTML='<div class="g2">'+all.slice(0,12).map(r=>setupCard(r,r.sig['4h'],'SWING','sw')).join('')+'</div>';}
-function renderLT(){const all=Object.values(S.pairs).filter(r=>r.sig&&r.sig['1d']&&r.sig['1d'].sig==='LONG'&&r.sig['1d'].str>=3).sort((a,b)=>(b.sig['1d'].str||0)-(a.sig['1d'].str||0));const el=document.getElementById('ltEl');if(!all.length){el.innerHTML='<div class="empty"><div class="empty-icon">📈</div><div>1d analysis loads 4min after startup.<br><span class="mu">Or go to Signals → switch to 1d → Refresh</span></div></div>';return;}el.innerHTML='<div class="g2">'+all.slice(0,10).map(r=>setupCard(r,r.sig['1d'],'LONG TERM','lt')).join('')+'</div>';}
+function renderSwing(){
+  const all=Object.values(S.pairs).filter(r=>r.sig&&r.sig['4h']&&r.sig['4h'].sig!=='NEUTRAL'&&r.sig['4h'].str>=3).sort((a,b)=>(b.sig['4h'].str||0)-(a.sig['4h'].str||0));
+  const el=document.getElementById('swingEl');
+  if(!all.length){
+    const isAnalyzing=S.analyzing;
+    el.innerHTML=`<div class="empty">
+      <div class="empty-icon">🌊</div>
+      <div style="margin-bottom:16px">${isAnalyzing?'Analyzing 4h data… please wait.':'No 4h data loaded yet.'}</div>
+      <button onclick="forceLoad4h()" style="background:var(--cy-bg);border:1px solid rgba(0,229,255,.3);color:var(--cy);border-radius:7px;padding:10px 20px;font-size:13px;cursor:pointer;font-family:inherit">
+        🌊 Load 4h Swing Setups Now
+      </button>
+      <div style="font-size:11px;color:var(--mu);margin-top:10px">Fetches 4h candles for top 120 pairs (~30 seconds)</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML='<div class="g2">'+all.slice(0,12).map(r=>setupCard(r,r.sig['4h'],'SWING','sw')).join('')+'</div>';
+}
+function renderLT(){
+  const all=Object.values(S.pairs).filter(r=>r.sig&&r.sig['1d']&&r.sig['1d'].sig==='LONG'&&r.sig['1d'].str>=3).sort((a,b)=>(b.sig['1d'].str||0)-(a.sig['1d'].str||0));
+  const el=document.getElementById('ltEl');
+  if(!all.length){
+    el.innerHTML=`<div class="empty">
+      <div class="empty-icon">📈</div>
+      <div style="margin-bottom:16px">No daily data loaded yet.</div>
+      <button onclick="forceLoad1d()" style="background:var(--ye-bg);border:1px solid rgba(255,214,0,.3);color:var(--ye);border-radius:7px;padding:10px 20px;font-size:13px;cursor:pointer;font-family:inherit">
+        📈 Load Daily Long-Term Setups Now
+      </button>
+      <div style="font-size:11px;color:var(--mu);margin-top:10px">Fetches daily candles for top 120 pairs (~30 seconds)</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML='<div class="g2">'+all.slice(0,10).map(r=>setupCard(r,r.sig['1d'],'LONG TERM','lt')).join('')+'</div>';
+}
 
 // ── WATCHLIST ─────────────────────────────────────────────────────────────────
 function addWL(sym){if(!sym)return;sym=sym.toUpperCase().trim();if(!sym.endsWith('USDT'))sym+='USDT';if(!S.watchlist.includes(sym)){S.watchlist.push(sym);localStorage.setItem('ge_wl',JSON.stringify(S.watchlist));renderWL();}}
@@ -964,6 +1003,22 @@ function toggleSound(){S.sound=!S.sound;const b=document.getElementById('soundBt
 function toggleTheme(){S.theme=S.theme==='dark'?'light':'dark';document.body.className=S.theme==='light'?'light':'';document.getElementById('themeBtn').textContent=S.theme==='dark'?'🌙 Dark':'☀️ Light';}
 function setTF(el){document.querySelectorAll('[data-tf]').forEach(b=>b.classList.remove('active'));el.classList.add('active');S.tf=el.dataset.tf;if(!Object.values(S.pairs).some(p=>p.sig&&p.sig[S.tf]))analyzeAll(S.tf);else renderPage();}
 function forceRe(){S.analyzing=false;analyzeAll(S.tf,true);}
+
+// ── FORCE LOAD HELPERS ───────────────────────────────────────────────────────
+async function forceLoad4h(){
+  const el=document.getElementById('swingEl');
+  el.innerHTML='<div class="empty"><div class="empty-icon"><span class="sp"></span></div><div>Fetching 4h candles for 120 pairs…<br><span class="mu">This takes about 30 seconds</span></div></div>';
+  S.analyzing=false;
+  await analyzeAll('4h',true);
+  renderSwing();
+}
+async function forceLoad1d(){
+  const el=document.getElementById('ltEl');
+  el.innerHTML='<div class="empty"><div class="empty-icon"><span class="sp"></span></div><div>Fetching daily candles for 120 pairs…<br><span class="mu">This takes about 30 seconds</span></div></div>';
+  S.analyzing=false;
+  await analyzeAll('1d',true);
+  renderLT();
+}
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 connectWS();
